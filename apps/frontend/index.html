@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docker Training App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        #items {
+            margin-top: 20px;
+        }
+        .item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f8f9fa;
+            border-left: 3px solid #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Docker Training Application</h1>
+        <p>This is a simple frontend that connects to the backend API.</p>
+        
+        <div id="status"></div>
+        
+        <h2>API Connection Test</h2>
+        <button onclick="checkAPI()">Check API Health</button>
+        <button onclick="checkDatabase()">Check Database</button>
+        
+        <h2>Items</h2>
+        <button onclick="loadItems()">Load Items</button>
+        <button onclick="addItem()">Add Random Item</button>
+        
+        <div id="items"></div>
+    </div>
+
+    <script>
+        const API_URL = window.location.protocol + '//' + window.location.hostname + ':3000';
+
+        function showStatus(message, isError = false) {
+            const status = document.getElementById('status');
+            status.className = 'status ' + (isError ? 'error' : 'success');
+            status.textContent = message;
+        }
+
+        async function checkAPI() {
+            try {
+                const response = await fetch(`${API_URL}/health`);
+                const data = await response.json();
+                showStatus('API is healthy: ' + JSON.stringify(data));
+            } catch (error) {
+                showStatus('API connection failed: ' + error.message, true);
+            }
+        }
+
+        async function checkDatabase() {
+            try {
+                const response = await fetch(`${API_URL}/db-check`);
+                const data = await response.json();
+                showStatus('Database connected: ' + data.status);
+            } catch (error) {
+                showStatus('Database check failed: ' + error.message, true);
+            }
+        }
+
+        async function loadItems() {
+            try {
+                const response = await fetch(`${API_URL}/items`);
+                const items = await response.json();
+                const itemsDiv = document.getElementById('items');
+                
+                if (items.length === 0) {
+                    itemsDiv.innerHTML = '<p>No items yet. Add some!</p>';
+                } else {
+                    itemsDiv.innerHTML = items.map(item => 
+                        `<div class="item">
+                            <strong>${item.name}</strong>
+                            <br><small>ID: ${item.id} | Created: ${new Date(item.created_at).toLocaleString()}</small>
+                        </div>`
+                    ).join('');
+                }
+                showStatus(`Loaded ${items.length} items`);
+            } catch (error) {
+                showStatus('Failed to load items: ' + error.message, true);
+            }
+        }
+
+        async function addItem() {
+            const names = ['Docker', 'Container', 'Image', 'Volume', 'Network', 'Compose', 'Registry'];
+            const name = names[Math.floor(Math.random() * names.length)] + ' ' + Date.now();
+            
+            try {
+                const response = await fetch(`${API_URL}/items`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+                const item = await response.json();
+                showStatus('Added item: ' + item.name);
+                loadItems();
+            } catch (error) {
+                showStatus('Failed to add item: ' + error.message, true);
+            }
+        }
+    </script>
+</body>
+</html>

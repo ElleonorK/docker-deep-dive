@@ -1,0 +1,18 @@
+{
+  "enabled": true,
+  "name": "Smart Ignore File Manager",
+  "description": "Automatically creates or updates .gitignore, .dockerignore, .helmignore and other ignore files based on detected languages, tools, IDEs, and build artifacts. Uses templates from github/gitignore and gitignore.io as references.",
+  "version": "1",
+  "when": {
+    "type": "fileCreated",
+    "patterns": [
+      "**/*"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Analyze the repository for languages, tools, IDEs, and hidden folders (like .pycache, .idea, node_modules, etc.). Check if appropriate ignore files (.gitignore, .dockerignore, .helmignore and so on) exist and are up-to-date. If missing or incomplete, create or update them using templates from https://github.com/github/gitignore and https://gitignore.io as references. Consider OS-specific files, language-specific artifacts, IDE files, build outputs, secrets, and dependencies. Focus on the newly created file and related patterns."
+  },
+  "workspaceFolderName": "docker-exercise",
+  "shortName": "smart-ignore-manager"
+}
