@@ -130,12 +130,12 @@ Bonus: Try the `docker system prune` command to clean up everything at once (be 
 
 You've completed this exercise when you can:
 
-*   ✓ Run containers in both detached and interactive modes
-*   ✓ Run containers with custom commands
-*   ✓ Access a web server running in a container from your browser
-*   ✓ Transition containers through different states (run, pause, stop, start, restart)
-*   ✓ View, follow, and filter container logs
-*   ✓ Inspect both container and image metadata
-*   ✓ Clean up unused containers and images
+- [ ] Run containers in both detached and interactive modes
+- [ ] Run containers with custom commands
+- [ ] Access a web server running in a container from your browser
+- [ ] Transition containers through different states (run, pause, stop, start, restart)
+- [ ] View, follow, and filter container logs
+- [ ] Inspect both container and image metadata
+- [ ] Clean up unused containers and images
 
 No solution file needed - these are standard Docker commands you'll use daily!

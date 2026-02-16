@@ -1,118 +1,156 @@
 # Exercise 02: Building Docker Images
 
-Learn to create, optimize, and secure Docker images using Dockerfiles.
+Learn to create production-ready Docker images through hands-on practice.
 
 ## Objectives
 
-Master the art of building production-ready Docker images:
-- Write Dockerfiles
-- Optimize image size
-- Implement security best practices
-- Use build arguments
-- Understand multi-stage builds
-- Configure image metadata
+By the end of this exercise, you'll be comfortable with:
 
-## The Application
+*   Writing Dockerfiles from scratch
+*   Making small images
+*   Implementing security best practices
+*   Configuring environment variables inside the image
+*   Understanding startup commands
 
-You'll be working with the Node.js app in `../apps/simple-web/`. 
+## The Mission
 
-Read its README to understand what it does. You don't need to modify the application code.
+You're containerizing a Node.js web app. Your goal: build an image that's small, secure, and production-ready.
+
+The app lives in `../apps/simple-web/` *   check its README to see what it does.
 
 ## Tasks
 
 ### Task 1: Build Your First Image
 
-Create a Dockerfile in this directory that builds and runs the simple-web app.
+Create a `Dockerfile` in this directory that runs the simple-web app.
 
-Requirements:
-- The image should build successfully
-- Running a container from this image should start the web server
-- You should be able to access http://localhost:8080 from your browser
+The app lives in `../apps/simple-web/` *   explore it to understand what it needs to run.
 
-Hint: You'll need to install dependencies and start the app.
+Your goal: build an image, run a container from it, and access the app at http://localhost:8080
 
-### Task 2: Reduce Image Size
+**Success criteria:** You see JSON with app info when you visit the URL.
 
-Check your image size with `docker images`. It's probably over 500MB.
+### Task 2: Show Different Versions
 
-Industry standard for a Node.js app like this is under 100MB. Reduce your image size to meet this standard.
+The app displays a version from the `APP_VERSION` environment variable. 
 
-Hint: Not all base images are created equal.
+Set `APP_VERSION` to "1.0.0" in your Dockerfile, build an image tagged as `simple-web:v1`, and run it. Verify the version shows up at http://localhost:8080
 
-### Task 3: Remove Root Access
+Now change `APP_VERSION` to "2.0.0" in your Dockerfile, build another image tagged as `simple-web:v2`, and run it on a different port. Verify both containers are running with different versions.
 
-Run this command with your container: `docker exec <container-name> whoami`
+Notice how image tags can be anything *   not just numbers. Try building with tags like `simple-web:latest`, `simple-web:production`, or `simple-web:feature-xyz`.
 
-If it says "root", that's a security risk. Fix your Dockerfile so the app runs as a non-root user.
+What's annoying about modifying the Dockerfile for each version? There's a better way coming in Task 3.
 
-Verify: `whoami` should return something other than "root".
+### Task 3: Make Version Configurable
 
-### Task 4: Make Version Configurable
+Remember Task 2 where you had to edit the Dockerfile for each version? That's not sustainable.
 
-The app displays a version from the APP_VERSION environment variable. Currently, you'd have to hardcode this in the Dockerfile.
+**Your goal:** build two images with versions "1.0.0" and "2.0.0" without modifying the Dockerfile between builds.
+You will need to change something in the Dockerfile to make it work. 
 
-Make it so you can specify the version at build time:
-```bash
-docker build --build-arg VERSION=1.2.3 -t simple-web:1.2.3 .
-docker build --build-arg VERSION=2.0.0 -t simple-web:2.0.0 .
-```
+**Success criteria:** Run each image and verify they show different versions.
 
-Run each image and verify they show different versions at http://localhost:8080
+**Hint:** The app needs the version as an environment variable at runtime. But you want to set it at build time. What do you do?
 
-### Task 5: Expose the Port
+### Task 4: Make It User-Friendly
 
-Try to run your container using Docker Desktop UI:
+Try to run your container using Docker Desktop:
 1. Open Docker Desktop
 2. Go to Images
 3. Find your image and click Run
 4. Expand "Optional settings"
-5. Try to add port 8080 in the Ports section
+5. Look at the Ports section
 
-What happens? Fix your Dockerfile so Docker Desktop knows which port to expose.
+What do you see? Can you map a port?
 
-### Task 6: Remove Build Tools
+Now add something to your Dockerfile that makes the port to show up. Rebuild and try again *   the Ports section should look different now.
 
-Your final image shouldn't contain npm or any build tools - only what's needed to run the app.
+**Think:** Your container runs fine without this. So why bother? Who benefits from knowing which ports an image uses? Are there other parts of the Dockerfile that similarly don't affect the running container?
 
-Verify by running: `docker exec <container-name> which npm`
+### Task 5: Command Flexibility
 
-It should return nothing (npm not found). But the app should still run!
+Look inside `package.json`. Notice the app has two npm scripts: `npm start` (runs the app) and `npm test` (runs a quick test).
 
-Hint: You need to build in one stage and run in another.
+**Your challenge:** Set up your Dockerfile so that:
+*   `docker run simple-web` runs `npm start` (default)
+*   `docker run simple-web test` runs `npm test`
 
-### Task 7: Support Command Line Arguments
+**Bonus challenge:** Now try to check the Node version (`node --version`) without modifying the Dockerfile.
 
-Your container should work in two ways:
-- `docker run simple-web` - starts the web server
-- `docker run simple-web --help` - shows help text (you can make this show anything)
+**Think:** Why would you want to have a default command for an image? What happens when you don't have it? When would you want to override the base command entirely?
 
-This requires understanding the difference between ENTRYPOINT and CMD.
+### Task 6: Separate Build from Runtime
 
-### Task 8: Fix File Permissions
+**Preparation:** Start your container in detached mode so you can inspect it while it's running. Give it a memorable name to make the commands easier.
 
-Run: `docker exec <container-name> ls -la /app`
+Now let's inspect what's inside your image.
 
-If files are owned by root, fix your Dockerfile so they're owned by the non-root user.
+**Check what's in your image:** Run `docker exec <container-name> which npm`
 
-Hint: COPY has options for setting ownership.
+Did you find npm inside? Why is that a security risk?
 
-## Resources
+**Your challenge:** Restructure your Dockerfile to use two stages:
+1. A build stage that uses npm
+2. A runtime stage that only contains what's needed to run the app purely through node
 
-- [Dockerfile reference](https://docs.docker.com/engine/reference/builder/)
-- [Best practices for writing Dockerfiles](https://docs.docker.com/develop/develop-images/dockerfile_best-practices/)
-- [Multi-stage builds](https://docs.docker.com/build/building/multi-stage/)
-- [Node.js Docker images](https://hub.docker.com/_/node)
+After rebuilding, verify that `which npm` returns nothing (npm not found).
+
+**Think:** What files does Node.js actually need to run your app?
+
+### Task 7: Secure the Runtime
+
+**Preparation:** Start your container in detached mode so you can inspect it while it's running. Give it a memorable name to make the commands easier.
+
+**Experiment with your running container:**
+
+Try to modify the application code from inside the container:
+```bash
+docker exec -it <container-name> sh
+```
+
+Once inside, try to edit the app.js file (you can use `vi` or `sed`):
+```bash
+sed -i "s/Hello from Docker!/HACKED!/" /app/app.js
+```
+
+Exit the shell and restart the container, then visit http://localhost:8080 in your browser.
+
+What do you see? Were you able to modify the running application? In a production environment, if an attacker exploits your app, they shouldn't be able to change the code!
+
+**Your challenge:** Secure your image so that an attacker who compromises the app can't modify the application files.
+
+After rebuilding, try the same attack again. Can you still modify the code?
+
+**Hints:**
+* Who should run the application?
+* What permissions should the files have?
+* How can multi-stage build help you?
+
+### Task 8: Minimize Image Size
+
+**Check your image size:** Run `docker images simple-web`
+
+**Your goal:** Get the image under 100MB.
+
+You've already removed build tools with multi-stage builds. What else can you optimize?
+
+**Think:**
+*   Does the build stage size matter, or only the final stage?
 
 ## Verification Checklist
 
 You've completed this exercise when:
-- ✓ Image builds successfully
-- ✓ Image size is under 100MB
-- ✓ App runs as non-root user
-- ✓ Version is configurable at build time
-- ✓ Port is exposed (visible in Docker Desktop)
-- ✓ No build tools in final image
-- ✓ Container responds to both normal run and --help
-- ✓ Files are owned by non-root user
+- [ ]   Image builds successfully
+- [ ]   Version is configurable at build time (without modifying app code)
+- [ ]   You can set the localhost port in Docker Desktop
+- [ ]   You cannot modify the code of the running app
+- [ ]   Image size is under 100MB
 
-This is the most challenging exercise - take your time and read the documentation!
+## Resources
+
+*   [Dockerfile reference](https://docs.docker.com/engine/reference/builder/)
+*   [Best practices for writing Dockerfiles](https://docs.docker.com/develop/develop-images/dockerfile_best-practices/)
+*   [Multi-stage builds](https://docs.docker.com/build/building/multi-stage/)
+*   [Node.js Docker images](https://hub.docker.com/_/node)
+

@@ -11,9 +11,15 @@ A minimal Node.js web application for Docker training exercises.
 
 ## Running locally (without Docker)
 
+With npm:
 ```bash
 npm install
 npm start
+```
+
+Or directly with node (after installing dependencies):
+```bash
+node app.js
 ```
 
 Then visit http://localhost:8080
