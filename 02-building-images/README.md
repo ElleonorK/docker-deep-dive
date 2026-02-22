@@ -147,6 +147,10 @@ You've completed this exercise when:
 - [ ]   You cannot modify the code of the running app
 - [ ]   Image size is under 100MB
 
+## Cleanup
+
+Remove all containers and older versions of the images you created.
+
 ## Resources
 
 *   [Dockerfile reference](https://docs.docker.com/engine/reference/builder/)

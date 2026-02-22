@@ -11,63 +11,95 @@ Understand Docker networking:
 - Network isolation
 - DNS resolution between containers
 
+## Prerequisites
+
+You should have completed exercise 02 and have a `simple-web` image built. If not, go back and build it first.
+
 ## Tasks
 
-### Task 1: Access Your App from the Host
+### Task 1: Port Mapping Basics
 
-Run your simple-web container (from exercise 02) and access it from your browser at http://localhost:8080
+Let's start with the simple-web app you built in exercise 02.
 
-The container's port 8080 should be accessible from your host machine.
+**Part A:** Run your simple-web container and map its port so you can access it at http://localhost:8080
 
-### Task 2: Run on a Different Port
-
-Run another instance of simple-web, but this time access it at http://localhost:3000
+**Part B:** Now run a second instance of the same image, but map it to http://localhost:3000 instead.
 
 Both containers should run simultaneously without conflicts.
 
-### Task 3: Container-to-Container Communication
+**Success criteria:** You can access both URLs in your browser and see the app running.
 
-You'll need two containers:
-1. A postgres database container
-2. The API app from `../apps/api/`
+**Think:** How does Docker let multiple containers use the same internal port without conflicts?
 
-Build and run the API container. It needs to connect to postgres using the hostname "database" (not an IP address).
+### Task 2: Container-to-Container Communication
 
-Verify: The API should start without connection errors. Check the logs.
+Now let's work with a more realistic scenario: an API that needs to talk to a database.
 
-### Task 4: Network Isolation
+**Setup:**
 
-With your setup from Task 3:
+First, get the postgres database running:
+```bash
+docker run -d \
+  --name database \
+  -e POSTGRES_PASSWORD=mysecretpassword \
+  postgres:16-alpine
+```
+
+Next, build the API app. Navigate to `../apps/api/` and check its README to understand what it does. Then create a Dockerfile for it and build an image called `api`.
+
+**Your challenge:** Run the API container so it can connect to postgres using the hostname "database" (not an IP address).
+
+**Success criteria:** The API starts without connection errors. Check the logs with `docker logs <container-name>`.
+
+**Hint:** Do all containers know each other by container name?
+
+### Task 3: Network Isolation
+
+With your setup from Task 2 running:
 - The API should be able to reach the database
-- Your host machine should be able to reach the API
+- Your host machine should be able to reach the API (map a port to test this)
 - Your host machine should NOT be able to reach the database directly
 
-Try to connect to postgres from your host on port 5432. It should fail.
+**Test it:** Try to connect to postgres from your host on port 5432. It should fail (connection refused or timeout).
 
-But the API should still work fine.
+But when you access the API endpoint, it should successfully query the database.
 
-### Task 5: Inspect the Network
+**Think:** Why is this isolation useful in production? What security benefits does it provide?
+
+### Task 4: Inspect the Network
+
+Let's understand what Docker created for you.
 
 Find out:
-- What network are your containers on?
+- What network are your API and database containers on?
 - What are their IP addresses?
 - Can you ping one container from another?
 
-Hint: Networks can be inspected, and you can execute commands inside containers.
+**Hints:** 
+- Networks can be inspected with `docker network inspect <network-name>`
+- You can execute commands inside containers with `docker exec`
+- Try `docker exec <container-name> ping <other-container-name>`
 
-### Task 6: Multiple Networks
+### Task 5: Multiple Networks
 
 Create a scenario with three containers:
-- frontend (simple-web)
-- backend (api)
+- frontend (use your simple-web image)
+- backend (your api image)
 - database (postgres)
 
-Requirements:
+**Requirements:**
 - frontend can reach backend
 - backend can reach database
 - frontend CANNOT reach database
 
-This requires two separate networks.
+This requires creating two separate networks and connecting containers to the right ones.
+
+**Success criteria:** 
+- You can exec into the frontend container and successfully curl the backend
+- You can exec into the frontend container and fail to reach the database
+- The backend can still query the database successfully
+
+**Think:** How does this architecture pattern (frontend → backend → database) improve security?
 
 ## Resources
 
@@ -81,6 +113,19 @@ You've completed this exercise when:
 - ✓ Can access container services from host on mapped ports
 - ✓ Can run multiple containers on different host ports
 - ✓ Containers can reach each other by name (DNS)
-- ✓ Can isolate containers from host access
-- ✓ Can inspect network configuration
+- ✓ Understand how to isolate containers from host access
+- ✓ Can inspect network configuration and container IPs
 - ✓ Can create multi-network isolation scenarios
+
+## Cleanup
+
+Stop and remove all containers you created:
+```bash
+docker stop <container-name>
+docker rm <container-name>
+```
+
+Remove any custom networks you created:
+```bash
+docker network rm <network-name>
+```
