@@ -21,9 +21,9 @@ A Node.js REST API that connects to PostgreSQL database.
 Required:
 - `DB_HOST` - Database hostname (default: localhost)
 - `DB_PORT` - Database port (default: 5432)
-- `DB_NAME` - Database name (default: appdb)
+- `DB_NAME` - Database name (default: postgres)
 - `DB_USER` - Database user (default: postgres)
-- `DB_PASSWORD` - Database password (default: postgres)
+- `DB_PASSWORD` - Database password (default: mysecretpassword)
 
 Optional:
 - `PORT` - API port (default: 3000)
