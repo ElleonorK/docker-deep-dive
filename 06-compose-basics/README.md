@@ -20,14 +20,16 @@ You should have completed exercises 01-05. You'll need all three applications fr
 
 ### Task 1: The Big Challenge - Recreate Your Multi-Container Setup
 
-In exercises 02-04, you manually connected containers with networks, exposed ports, and persisted data. You ran multiple commands to set everything up. Now do it all with one compose file.
+In exercises 02-04, you ran multiple containers, had to configure two isolated networks, expose ports to localhost, and keep data persistent.
+
+All of this you did manually and running many commands. That was tedious and error-prone. Now let's do it all at once and "as code".
 
 Build a complete stack with three applications using your already-built images:
-* **simple-go-web** - the Go web application (use your existing image)
-* **api** - the Node.js API that connects to a database (use your existing image)
-* **database** - postgres 16-alpine
+* **simple-go-web** - the Go web application
+* **api** - the Node.js API that connects to a database
+* **database** - postgres 16-alpine from Docker Hub
 
-Requirements:
+#### *Requirements*
 
 **Port Exposure:**
 * simple-go-web accessible at http://localhost:8080
@@ -37,12 +39,11 @@ Requirements:
 **Network Isolation:**
 * simple-go-web should NOT be able to reach the database
 * api should be able to reach the database
-* You'll need to define multiple networks explicitly
 
 **Data Persistence:**
 * Database data must survive `docker compose down` and `docker compose up`
 
-Start everything with `docker compose up`. Verify:
+**Success Criteria:**
 * Go app is accessible at http://localhost:8080
 * API is responding http://localhost:3000 and connects to the database
 * Data in the database is persistent:
@@ -64,29 +65,79 @@ Start everything with `docker compose up`. Verify:
 
 Up till now you used images already built. Will you have to build it yourself every time there is a small change?
 
-Modify your compose file to build the images instead of using existing ones:
-* simple-go-web should build from `apps/simple-go-web/`
-* api should build from `apps/api/`
+Modify the compose file so simple-go-web and api images are built at runtime instead of using existing ones.
 
-But here's the challenge - use build arguments:
-* For simple-go-web, pass `APP_VERSION` as a build argument (set it to "2.0.0")
-* For api, pass `NODE_VERSION` as a build argument (set it to "20")
+Delete your old images and run `docker compose up`.
 
-You'll need to modify the Dockerfiles to accept these build arguments. Check the Dockerfiles and add `ARG` instructions where needed.
+**Success Criteria:**
 
-Remove your old images and run `docker compose up`. Compose should build the images automatically.
+Once it's working, visit http://localhost:8080. The Go app should display a version. But which version does it show?
 
-Verify:
-* Visit http://localhost:8080 - the version should show "2.0.0"
-* Exec into the api container and check Node version: `docker compose exec api node --version`
+**Here's the next challenge:**
+Make the version configurable through your compose file. Set `APP_VERSION` to "2.0.0" and make sure that's what you see.
+Do it in two different ways:
+1. Set it during build
+2. Change it at runtime
+Set `APP_VERSION` to "2.0.0".
 
-Now change the `APP_VERSION` to "3.0.0" in your compose file and run `docker compose up` again. Does it rebuild? Why or why not?
+**Hint:** You learned about build arguments vs environment variables in exercise 02.
 
-Try `docker compose up --build`. What's different?
+### Task 3: Context is Key
 
-**Think:** What's the difference between build arguments and environment variables? When is each set? What's the build context and why does it matter?
+Your compose file is in `06-compose-basics/` but your apps are in `apps/`. You've been running compose from the exercise directory, but what if you need to run it from somewhere else?
 
-### Task 3: Scaling and Replicas
+Try running compose from different locations:
+
+```bash
+# From the exercise directory (where you've been running it)
+cd 06-compose-basics
+docker compose up --build
+
+# From the repository root
+cd ..
+docker compose -f 06-compose-basics/docker-compose.yml up --build
+
+# From inside the apps directory
+cd apps
+docker compose -f ../06-compose-basics/docker-compose.yml up --build
+```
+
+What happens in each case? Does the build work from all locations? If some fail, what error do you see?
+
+**Your challenge:** Fix your compose file so it works regardless of where you run the command from.
+
+**Hint:** The build context path in your compose file is relative to something. Is it relative to the compose file location, or to where you run the command?
+
+**Think:** In a real project, developers might run compose from different directories, or CI/CD might run it from the repo root. How do you make your setup portable?
+
+Now that you understand build context paths, let's look at what's actually being sent. Your team keeps complaining that builds are slow. You notice the "Sending build context to Docker daemon" message takes forever.
+
+Create some realistic development clutter in your `apps/api/` directory:
+```bash
+cd apps/api
+npm install  # Creates node_modules
+mkdir -p logs coverage .git
+echo "debug log" > logs/app.log
+echo "test coverage" > coverage/report.html
+dd if=/dev/zero of=.git/large-blob bs=1M count=50
+```
+
+Now rebuild your api service from the repository root and watch carefully:
+```bash
+docker compose -f 06-compose-basics/docker-compose.yml build api
+```
+
+Look at the "Sending build context" line. How much data is being transferred? Time how long it takes.
+
+Exec into the running api container and list what files are actually there. Does the container need `node_modules` from your host? Does it need logs? Coverage reports? Git history?
+
+**Your challenge:** Create a `.dockerignore` file in `apps/api/` that excludes unnecessary files. Rebuild and measure the difference.
+
+**Success criteria:** Build context should drop from megabytes to kilobytes. Build time should be noticeably faster.
+
+**Think:** What files does a Node.js app need at runtime vs what accumulates during development? Why send files to the Docker daemon that won't even be used in the image?
+
+### Task 4: Scaling and Replicas
 
 You want to run multiple instances of your services for high availability.
 
@@ -115,7 +166,7 @@ Both database containers start, but what happens to your data? Create some data,
 
 **Think:** Why is scaling databases problematic? What happens when multiple database instances try to use the same volume? When would you want to scale a service vs when wouldn't you?
 
-### Task 4: Multiple Compose Files and Overrides
+### Task 5: Multiple Compose Files and Overrides
 
 Your compose file is getting complex. Split it up and learn about composition.
 
@@ -154,7 +205,7 @@ What port is the web app on now? The override file wasn't used.
 
 **Think:** What's the precedence order when merging compose files? When would you use docker-compose.override.yml vs explicitly specifying files? How would you use this for dev vs prod environments?
 
-### Task 5: Lifecycle Management - Compose vs Docker
+### Task 6: Lifecycle Management - Compose vs Docker
 
 Understand the difference between managing containers with `docker` commands vs `docker compose` commands.
 
