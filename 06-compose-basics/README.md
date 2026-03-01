@@ -87,9 +87,9 @@ Set `APP_VERSION` to "2.0.0".
 Your compose file is in `06-compose-basics/` but your apps are in `apps/`. You've been running compose from the exercise directory, but what if you need to run it from somewhere else?
 
 Try running compose from different locations:
-
+(Assuming your docker-compose.yml is inside this exercise directory)
 ```bash
-# From the exercise directory (where you've been running it)
+# From the exercise directory
 cd 06-compose-basics
 docker compose up --build
 
@@ -106,38 +106,48 @@ What happens in each case? Does the build work from all locations? If some fail,
 
 **Your challenge:** Fix your compose file so it works regardless of where you run the command from.
 
-**Hint:** The build context path in your compose file is relative to something. Is it relative to the compose file location, or to where you run the command?
+**Hint:** Look at the title of the task.
 
-**Think:** In a real project, developers might run compose from different directories, or CI/CD might run it from the repo root. How do you make your setup portable?
+### Task 4: Reducing Clutter
 
-Now that you understand build context paths, let's look at what's actually being sent. Your team keeps complaining that builds are slow. You notice the "Sending build context to Docker daemon" message takes forever.
+**Mission:**
+Let's look at a real scenario you may face as a DevOps Engineer.
 
-Create some realistic development clutter in your `apps/api/` directory:
+The development team keeps complaining that starting their compose environment takes forever. You notice it is stuck on "Sending build context to Docker daemon" message for a long time.
+
+Start the investigation 🔍 👀
+
+**Reproduce the issue:**
+
+Create some realistic clutter in your `apps/api/` directory that a developer might have:
+
 ```bash
 cd apps/api
-npm install  # Creates node_modules
-mkdir -p logs coverage .git
-echo "debug log" > logs/app.log
-echo "test coverage" > coverage/report.html
-dd if=/dev/zero of=.git/large-blob bs=1M count=50
+mkdir -p logs media
+# Generate a large log file (more than 60MB)
+for i in {1..1000000}; do echo "[2024-02-26 10:23:45] INFO: Processing request $i from user-$((i % 100))" >> logs/app.log; done
+
+# Simulate some media files developers might have
+# These are not real media files, don't try to play them :)
+dd if=/dev/urandom of=media/demo.gif bs=100M count=5
+dd if=/dev/urandom of=media/tutorial.mp4 bs=1M count=5000
 ```
 
-Now rebuild your api service from the repository root and watch carefully:
-```bash
-docker compose -f 06-compose-basics/docker-compose.yml build api
-```
+Rebuild the api app using compose.
+How much time does "Sending build context" take?
 
-Look at the "Sending build context" line. How much data is being transferred? Time how long it takes.
+Exec into the running api container and list what files are actually there. Does the container contain logs? Screenshots? Videos?
+Is it using any of them?
 
-Exec into the running api container and list what files are actually there. Does the container need `node_modules` from your host? Does it need logs? Coverage reports? Git history?
+**Think:** You could change your Dockerfile to only copy certain files. Does it solve your time problem, though? Why?
 
-**Your challenge:** Create a `.dockerignore` file in `apps/api/` that excludes unnecessary files. Rebuild and measure the difference.
+**Your challenge:** Add something to `apps/api` folder that will stop docker from loading all these large files during build.
 
-**Success criteria:** Build context should drop from megabytes to kilobytes. Build time should be noticeably faster.
+**Success criteria:** Build time should be noticeably faster.
 
-**Think:** What files does a Node.js app need at runtime vs what accumulates during development? Why send files to the Docker daemon that won't even be used in the image?
+**Bonus:** What if developers add a new garbage folder? Change what you added to only load the specific files you need (allow vs deny logic).
 
-### Task 4: Scaling and Replicas
+### Task 5: Scaling and Replicas
 
 You want to run multiple instances of your services for high availability.
 
