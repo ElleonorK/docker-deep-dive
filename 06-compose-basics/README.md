@@ -147,81 +147,108 @@ Is it using any of them?
 
 **Bonus:** What if developers add a new garbage folder? Change what you added to only load the specific files you need (allow vs deny logic).
 
-### Task 5: Scaling and Replicas
+### Task 5: When One Isn't Enough
 
-You want to run multiple instances of your services for high availability.
+Your api service is getting hammered by traffic and the CPU utilization is through the roof!
+You decide to double the capacity for handling requests.
 
-Try scaling the simple-go-web service to 3 replicas:
-```bash
-docker compose up --scale simple-go-web=3
-```
+Without reloading your docker compose, increase the number of `api` containers to 2.
+Are you running into any issues?
 
-What happens? You probably get a port conflict error.
+**Your challenge:** Fix your compose file so you can run 2 `api` containers at the same time without collisions.
 
-Fix your compose file so you can scale simple-go-web. You'll need to change how ports are mapped.
-
-Once it works, scale to 3 instances and list your containers:
-```bash
-docker compose ps
-```
+**Success criteria:** Both containers start successfully and you can reach them in browser. Check `docker compose ps` - you should see two api containers running.
 
 What are the containers named? Notice the pattern?
 
-Now try scaling the database to 2 replicas:
+Now that you `api` is stable and all requests are being fulfilled, the database starts to choke. In a real scenario, you will start seeing 502 errors.
+
+So now you should increase the number of database containers to 3.
+> [!Tip]
+> Quite a few databases (and not just) require an uneven number of instances due to "leader election" logic.
+> 
+> Even though Postgres is not one of them, it's a good point to remember.
+
+When all three start, create some test data:
 ```bash
-docker compose up --scale database=2
+docker compose exec database psql -U postgres -c "CREATE TABLE scaling_test (id INT, data TEXT);"
+docker compose exec database psql -U postgres -c "INSERT INTO scaling_test VALUES (1, 'test data');"
 ```
 
-Both database containers start, but what happens to your data? Create some data, then stop one database replica. Where did the data go?
-
-**Think:** Why is scaling databases problematic? What happens when multiple database instances try to use the same volume? When would you want to scale a service vs when wouldn't you?
-
-### Task 5: Multiple Compose Files and Overrides
-
-Your compose file is getting complex. Split it up and learn about composition.
-
-Create two separate compose files:
-
-**docker-compose.yml** - Your base configuration with api and database only (remove simple-go-web)
-
-**docker-compose.web.yml** - Just the simple-go-web service
-
-Run both together:
+Now list all your database containers and pick one. Delete it:
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.web.yml up
+docker rm -f <one-database-container-name>
 ```
 
-All three services should start. What happens if you run just `docker compose up`? Which file does it use?
+What happens? Check `docker compose ps`. What do you see?
 
-Now create a third file: **docker-compose.override.yml**
+Wait a moment and check again. Did Compose recreate the container? What's its name?
 
-In this file, override some settings:
-* Change the simple-go-web port from 8080 to 9090
-* Change the `APP_VERSION` build argument to "4.0.0"
-* Add a new environment variable to the api service
+Query your test data from the recreated container. Is it still there?
 
-Run `docker compose up` (without specifying files). What happens?
-
-Compose automatically merges docker-compose.yml and docker-compose.override.yml. Verify:
-* The web app should be on port 9090 (not 8080)
-* The version should be "4.0.0"
-
-Now run with explicit files:
+Now exec into one of the database containers and create a file in the container's filesystem (not in a shared volume):
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.web.yml up
+docker compose exec <one-database-container-name> touch /tmp/my-local-file.txt
+docker compose exec <one-database-container-name> ls /tmp/
 ```
 
-What port is the web app on now? The override file wasn't used.
+Delete that specific container and let Compose recreate it. Check if the file is still there in the new container.
 
-**Think:** What's the precedence order when merging compose files? When would you use docker-compose.override.yml vs explicitly specifying files? How would you use this for dev vs prod environments?
+**Think:** Does a container name match with it's data? What happens inside docker daemon when a container in a set vanishes?
 
-### Task 6: Lifecycle Management - Compose vs Docker
+### Task 6: Configuration
 
-Understand the difference between managing containers with `docker` commands vs `docker compose` commands.
+Your team wants to run different web app versions on different environments. Time to split things up.
 
-Start your full stack with `docker compose up -d`.
+First, let's split our services into 2 independent stacks.
+Move simple-go-web to a separate file called `docker-compose-web.yml`. Keep api and database in `docker-compose.yml`.
 
-List containers using both methods:
+**Your challenge:** Run all three services with a single command.
+
+**Think:** What are the pros and cons of splitting into multiple files/stacks?
+
+Now, let's allow our developers to change things per environment.
+Create `docker-compose-web.dev.yml` that sets `APP_VERSION` to "3.0.0-dev" for simple-go-web.
+
+Create `docker-compose-web.prod.yml` that sets `APP_VERSION` to "3.0.0" for simple-go-web.
+
+> [!Warning]
+> I hope you didn't fully copy-paste `docker-compose-web.yml` 😈
+
+Run the web app with dev configuration. What version shows up? Try with prod configuration. What do you see?
+
+**For the next challenge, switch to api and database stack.** Your production environment requires a secure database password. Make sure that in dev environment the api uses a default password (check `apps/api/README.md` again), while in prod you set it to "superSecureUnbreakablePass@123".
+
+**Success criteria:** Run your full stack (api, database, and web) with production configuration. Visit http://localhost:3000/db-check to verify the api connects to the database with the production password.
+
+**Another Real Scenario**
+
+A new API developer on your team complains that when running the stack in production configuration, they are unable to connect the database with the production password.
+
+You notice that:
+* They are not actually using the api container, but running the source code manually. Compose is used only for the database. (It's a common way for developers to test changes before committing.)
+* They are setting the necessary environment variables, including the correct password. You don't notice any values that are incorrect.
+* They pass the files `docker-compose.prod.yml` first and `docker-compose.yml` second when running the compose command.
+
+**Your Challenge:** You are not here to debate security with the developer or teach them. They need to test it NOW. Find the reasons for the problem and provide solutions.
+
+**Success Criteria:** The developer can run a single docker compose command, use the production password and connect to the database created by the compose.
+
+**Think:** Now that the release has come out and everyone is calm - what is the actual better way to address the issue?
+This time there isn't a single correct answer, however I will urge you to research development best practices from a DevOps perspective.
+
+### Task 7: To Compose OR To Not Compose?
+
+You've been using `docker compose` commands, but you can also use plain `docker` commands on the same containers. What's the relationship between the two tools?
+
+After an arduous journey, let's just play around. No challenge here.
+
+Start your stack:
+```bash
+docker compose up -d
+```
+
+List containers both ways:
 ```bash
 docker ps
 docker compose ps
@@ -229,54 +256,57 @@ docker compose ps
 
 What's different about the output?
 
-Now stop the api container using the docker command:
+Now stop the api container using plain Docker:
 ```bash
 docker stop <api-container-name>
 ```
 
-Check the status:
+Check what Compose thinks:
 ```bash
 docker compose ps
 ```
 
-What does Compose show? Start the container again using docker:
+What status does it show? Start it again with Docker:
 ```bash
 docker start <api-container-name>
 ```
 
-Now stop the api using Compose:
+Now stop it using Compose:
 ```bash
 docker compose stop api
 ```
 
-What's different?
-
-Try to remove a container using docker:
+Try to remove the stopped container:
 ```bash
 docker rm <api-container-name>
 ```
 
 Does it work? Why or why not?
 
-Now experiment with Compose commands:
+Restart everything and try these Compose commands. After each one, check `docker compose ps` and see what changed:
 ```bash
-docker compose stop        # Stop all services
-docker compose start       # Start stopped services
-docker compose restart     # Restart services
-docker compose down        # Stop and remove containers
-docker compose down -v     # Stop, remove containers AND volumes
+docker compose stop
+docker compose start
+docker compose restart api
+docker compose pause database
+docker compose unpause database
 ```
 
-Check logs:
+Now the big one:
 ```bash
-docker compose logs api              # Logs from api service
-docker compose logs -f               # Follow logs from all services
-docker compose logs --tail=20 api    # Last 20 lines from api
+docker compose down
 ```
 
-After running `docker compose down`, try to start containers with `docker start`. What happens?
+Run `docker ps -a`. What's left? Try to start the containers with `docker start`. What happens?
 
-**Think:** What's the difference between `docker compose stop` and `docker compose down`? When would you use each? What does Compose track that plain Docker commands don't? What happens to networks and volumes with each command?
+Check your logs before they're gone:
+```bash
+docker compose up -d
+docker compose logs api
+docker compose logs -f --tail=50
+```
+
+**Think:** What's the difference between `stop` and `down`? What does Compose manage that plain Docker can't? When would you use `docker compose down -v` vs just `docker compose down`?
 
 ## Resources
 
