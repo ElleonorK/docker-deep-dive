@@ -157,3 +157,6 @@ profile.cov
 # Solutions
 [Dd]ocker*
 .[Dd]ocker*
+*.md
+!README.md
+!SETUP.md
