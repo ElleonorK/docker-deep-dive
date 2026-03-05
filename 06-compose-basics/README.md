@@ -1,4 +1,4 @@
-## Exercise 06: Docker Compose Basics
+# Exercise 06: Docker Compose Basics
 
 Learn to orchestrate multi-container applications using Docker Compose.
 

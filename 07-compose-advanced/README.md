@@ -1,387 +1,214 @@
-## Exercise 07: Docker Compose Advanced
+# Exercise 07: Docker Compose Advanced
 
-Build production-ready Docker Compose applications with health checks, resource management, and advanced networking.
+Master production-ready Docker Compose configurations with health checks, resource management, and operational best practices.
 
 ## Objectives
 
 By the end of this exercise, you'll be comfortable with:
-* Implementing health checks and startup dependencies
+* Implementing health checks and smart startup dependencies
 * Configuring restart policies for resilience
-* Setting resource limits and reservations
-* Using different volume types for different use cases
-* Building multi-network architectures
-* Creating environment-specific configurations
-* Implementing load balancing and service discovery
+* Managing resource limits and reservations
+* Controlling logging to prevent disk space issues
+* Using profiles for optional services
+* Implementing graceful shutdown
+* Using extension fields to keep configs DRY
+* Understanding volume options and drivers
 
 ## Prerequisites
 
-You should have completed exercise 06. You'll build on that knowledge to create production-grade configurations.
+You should have completed exercise 06 and have a working compose stack with api, database, and simple-go-web services.
 
 ## The Mission
 
-Take a basic compose stack and make it production-ready with proper health checks, resource management, resilience, and scalability.
+Transform a basic compose stack into a production-ready configuration with proper health checks, resource management, and operational resilience.
 
 ## Tasks
 
-### Task 1: Health Checks - Database
+### Task 1: Health Checks
 
 In exercise 06, you used `depends_on` but the API still showed connection errors at startup because postgres wasn't ready yet.
 
-Add a health check to your database service. Postgres includes a `pg_isready` command that checks if the database is accepting connections.
+The API has two endpoints: `/health` returns a simple status check, and `/db-check` actually tests the database connection. These represent two different concepts in container orchestration.
 
-Configure the health check with:
-* A test command that runs `pg_isready`
-* An interval (how often to check)
-* A timeout (how long to wait for response)
-* Retries (how many failures before marking unhealthy)
-* A start period (grace period during startup)
+First, let's make the problem more visible. Modify your database service to start slowly by adding a startup delay:
 
-Run `docker compose up` and watch `docker compose ps` - you should see the health status change from "starting" to "healthy".
+```yaml
+command: sh -c "sleep 60 && docker-entrypoint.sh postgres"
+```
 
-**Think:** What values make sense for interval and timeout? Too frequent wastes resources, too infrequent delays startup.
+Start your stack. Watch the API logs - you'll see connection errors for the first minute.
 
-### Task 2: Health Checks - Redis
+**Your challenge:** Add health checks to both services. Check the postgres documentation and API README to understand what commands or endpoints are available for testing the health of your containers.
 
-Add a health check to your Redis service. Redis includes a `redis-cli ping` command that returns `PONG` when healthy.
+Configure the API to wait for the database to be healthy before starting using `depends_on` with conditions.
 
-The tricky part: `redis-cli ping` returns output, but health checks need an exit code. Figure out how to make the command return exit code 0 when healthy.
+Start your stack. Does the API still show connection errors? If yes, why? The database is healthy, so what's missing?
 
-Verify: `docker compose ps` should show Redis health status.
+Try using the API's `/db-check` endpoint for its health check instead. What changes?
 
-**Think:** Why do health checks need exit codes instead of output? What exit code means healthy vs unhealthy?
+**Success criteria:** Run `docker compose up` and watch the logs. The API should start only after the database is healthy, with zero connection errors. Check `docker compose ps -w` to see health status transition from "starting" to "healthy".
 
-### Task 3: Health Checks - API
+**Think:** What's the difference between application running vs an application being ready to serve traffic? Docker Compose doesn't differentiate between the two - which one is more important in your case?
 
-Your API needs a health check too. Most APIs expose a `/health` endpoint that returns HTTP 200 when healthy.
+### Task 2: When Containers Crash
 
-But there's a problem - the API container might not have `curl` installed. You have a few options:
-* Install curl in your API image
-* Use `wget` if available
-* Use a different health check method
+Containers don't always run forever. Sometimes they crash because they run out of resources, sometimes because of bugs, sometimes because of external factors.
 
-Add a health check to your API service that verifies it's responding to HTTP requests.
+**Your challenge:** Configure aggressive resource limits that will cause problems:
+* Database: 128MB memory limit, 64MB reserved
+* API: 16B memory limit, 8MB reserved
 
-**Think:** Should the health check just verify the API is running, or should it also check database connectivity? What's the tradeoff?
+Start your stack and watch what happens. Monitor with `docker stats` in another terminal.
 
-### Task 4: Startup Dependencies with Health Checks
+Visit the API endpoints a few times. Create some database tables. What happens to the containers?
 
-Now that you have health checks, fix the startup order properly.
+Check the container status with `docker compose ps`. What do you see? Are they running, or something else?
 
-The API should wait for the database to be healthy (not just started) before starting.
+Now look at the logs for whichever container crashed. What does the last message say?
 
-Modify your `depends_on` to use the `condition: service_healthy` option.
+**Success criteria:** You can make at least one container crash by hitting its resource limit. You understand what "OOMKilled" means.
 
-Run `docker compose up` and watch the logs carefully. The API should start only after the database is healthy, with zero connection errors.
+**Think:** What happens to your application when a container suddenly dies? What about the data that was in memory? What if this was handling a user's payment?
 
-**Think:** What happens if the database health check never passes? Does the API ever start?
+### Task 3: Graceful Shutdown and Automatic Recovery
 
-### Task 5: Complex Startup Dependencies
+In Task 2, you saw containers crash suddenly. That's not ideal. Let's learn how to handle shutdowns gracefully and recover automatically.
 
-You now have API, database, and Redis. The API needs both database and Redis to be healthy before starting.
+First, remove those aggressive resource limits from Task 2. Set reasonable limits instead:
+* Database: 512MB memory limit, 256MB reserved
+* API: 256MB memory limit, 128MB reserved
 
-Configure dependencies so:
-1. Database and Redis start first (they don't depend on anything)
-2. API waits for BOTH database and Redis to be healthy
-3. No connection errors in any logs
+**Part A: Understanding Shutdown**
 
-Verify: Run `docker compose up` and watch the startup sequence. Services should start in the correct order.
+Start your stack. Now run `docker compose down` and watch the logs carefully.
 
-**Think:** What if you add a frontend that depends on the API? How deep can the dependency chain go?
+What do you see? Do the containers stop immediately or do they take time? Do you see any "killed" messages?
 
-### Task 6: Restart Policies - Understanding the Options
-
-Services crash in production. Configure restart policies for resilience.
-
-Try each policy and understand what it does:
-* `no` - never restart
-* `always` - always restart, even if stopped manually
-* `on-failure` - only restart if the container exits with an error
-* `unless-stopped` - always restart unless explicitly stopped
-
-Set your database to `unless-stopped` and test it:
-1. Start your stack
-2. Kill the database: `docker compose kill database`
-3. Watch it restart automatically
-4. Stop the database: `docker compose stop database`
-5. Restart the entire stack: `docker compose restart`
-6. Check if the database started - it shouldn't have
-
-**Think:** What's the difference between killing and stopping? When would you use each restart policy?
-
-### Task 7: Restart Policies - On Failure with Limits
-
-Set your API to restart `on-failure` but with a maximum of 3 attempts.
-
-Test it by making the API crash repeatedly:
-1. Start your stack
-2. Kill the API: `docker compose kill api`
-3. Watch it restart
-4. Kill it again immediately
-5. Keep killing it rapidly
-
-After 3 restarts, it should give up. Check `docker compose ps` - the API should be in an exited state.
-
-**Think:** Why limit restart attempts? What happens in production if a service is misconfigured and crashes immediately on startup?
-
-### Task 8: Resource Limits - Memory
-
-Prevent services from consuming all system memory. Set memory limits:
-* Database: 512MB
-* Redis: 256MB
-* API: 256MB
-
-Start your stack and monitor resource usage:
+Try stopping just the database:
 ```bash
-docker stats
+docker compose stop database
 ```
 
-Now try to make the API consume more than 256MB of memory. What happens when it hits the limit?
+How long does it take? Now check the API logs - what happened to it when the database disappeared?
 
-**Think:** What happens when a container hits its memory limit? Does it slow down or get killed?
+**Your challenge:** Research what signal Docker sends when stopping a container. Find out how much time containers get before they're force-killed. Can you give the database more time to shut down cleanly?
 
-### Task 9: Resource Limits - CPU
+**Part B: Automatic Restart**
 
-Set CPU limits:
-* Database: 1.0 CPU (100% of one core)
-* Redis: 0.5 CPU (50% of one core)
-* API: 0.5 CPU (50% of one core)
-
-Monitor with `docker stats` and observe the CPU percentages.
-
-Try to make the API do CPU-intensive work. Can it exceed 50% of one core?
-
-**Think:** What's the difference between CPU limits and memory limits? What happens when you hit each?
-
-### Task 10: Resource Reservations
-
-Limits are maximums, but you can also set reservations (guaranteed minimums).
-
-Set both limits and reservations:
-* Database: 512MB limit, 256MB reserved
-* Redis: 256MB limit, 128MB reserved
-* API: 256MB limit, 128MB reserved
-
-**Think:** When would reservations matter? What happens if you try to reserve more resources than your system has?
-
-### Task 11: Volume Types - Named Volumes
-
-You're already using named volumes for persistent data. But let's understand them better.
-
-Create a named volume explicitly in your compose file (in the top-level `volumes:` section) instead of letting Compose create it automatically.
-
-Give it a custom name without the project prefix.
-
-Verify: `docker volume ls` should show your custom-named volume.
-
-**Think:** When would you want to control the volume name? What if multiple projects need to share data?
-
-### Task 12: Volume Types - Bind Mounts
-
-You need to provide a configuration file that can be edited while containers are running.
-
-Create a `redis.conf` file:
-```
-maxmemory 256mb
-maxmemory-policy allkeys-lru
-save 60 1000
-```
-
-Mount this file into your Redis container using a bind mount (not a volume).
-
-Verify: Edit `redis.conf` on your host, then check inside the container - changes should appear instantly without restarting.
-
-**Think:** What's the difference between a bind mount and a volume? When would you use each?
-
-### Task 13: Volume Types - Tmpfs
-
-Redis needs fast temporary storage for some operations. Tmpfs mounts live in memory and are very fast but don't persist.
-
-Add a tmpfs mount to your Redis container at `/tmp/redis-tmp`.
-
-Verify: 
-1. Exec into Redis and create a file: `docker compose exec redis sh -c "echo test > /tmp/redis-tmp/file.txt"`
-2. Check it exists: `docker compose exec redis cat /tmp/redis-tmp/file.txt`
-3. Restart just the Redis container: `docker compose restart redis`
-4. Check again - the file should be gone
-
-**Think:** When would you use tmpfs? What's the tradeoff between speed and persistence?
-
-### Task 14: Multi-Network Architecture
-
-Build a realistic network architecture with proper isolation:
-
-Services:
-* Frontend (nginx serving static files)
-* API (your existing API)
-* Database (postgres)
-* Cache (redis)
-
-Networks:
-* `frontend-network` - frontend and API
-* `backend-network` - API, database, and cache
-
-Requirements:
-* Frontend can reach API only
-* API can reach database and cache
-* Database and cache cannot reach each other
-* Frontend cannot reach database or cache
-
-Verify each isolation rule by trying to ping between services.
-
-**Think:** Why isolate database and cache from each other? What security principle is this?
-
-### Task 15: Load Balancing with Nginx
-
-Scale your API to 3 instances, but users should only hit one endpoint.
-
-Add an nginx load balancer service that:
-* Sits in front of the API
-* Distributes traffic across all API instances using round-robin
-* Is the only service exposed to the host
-
-Create an `nginx.conf` file:
-```nginx
-upstream api_backend {
-    server api:3000;
-}
-
-server {
-    listen 80;
-    location / {
-        proxy_pass http://api_backend;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
-
-But this only points to one API instance. Research how nginx discovers all instances when you scale the API service.
-
-Verify: Hit the load balancer multiple times and check logs - different API containers should handle requests.
-
-**Think:** How does nginx discover all API instances? What happens when you scale up or down?
-
-### Task 16: Environment-Specific Configurations
-
-Create three compose files:
-* `docker-compose.yml` - base configuration (all service definitions)
-* `docker-compose.dev.yml` - development overrides
-* `docker-compose.prod.yml` - production overrides
-
-Development should:
-* Expose all ports for debugging (database, redis, etc.)
-* Disable resource limits
-* Use `restart: "no"` for faster iteration
-* Mount source code for live reload
-* Enable verbose logging
-
-Production should:
-* Only expose the load balancer port
-* Enable all resource limits
-* Use `restart: unless-stopped`
-* No source code mounts
-* Minimal logging
-
-Test both:
+Start your stack again. Now simulate a crash by killing the database:
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up
+docker compose kill database
 ```
 
-**Think:** How would you handle secrets differently in each environment? What about SSL certificates?
+What happens? Check `docker compose ps`. Is the database running?
 
-### Task 17: Init Containers Pattern
+**Your challenge:** Configure restart policies so containers recover automatically from crashes. Research what options exist and configure:
+* Database: Always restart when it crashes, but stay stopped if you explicitly stop it
+* API: Restart on failures, but give up after 3 attempts
 
-Your database needs to run initialization scripts on first startup.
+Test your configuration:
+* Kill the database with `docker compose kill database` - does it come back?
+* Stop the database with `docker compose stop database` - does it come back?
+* Kill the API repeatedly - does it eventually give up?
 
-Create an `init.sql` file:
-```sql
-CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    username VARCHAR(255) UNIQUE NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+**Part C: The Cascade Effect**
 
-CREATE INDEX idx_users_username ON users(username);
-CREATE INDEX idx_users_email ON users(email);
+With your restart policies configured, kill the database again. Watch what happens to the API.
 
-INSERT INTO users (username, email) VALUES 
-    ('admin', 'admin@example.com'),
-    ('user1', 'user1@example.com');
+The API can't connect to the database anymore. What does it do? Does it crash? Does it keep trying?
+
+Now wait for the database to restart. Does the API recover automatically, or is it stuck in a bad state?
+
+**Your challenge:** Make the API resilient to database restarts. It should automatically reconnect when the database comes back. You might need to modify the restart policy or add health checks.
+
+**Success criteria:**
+* Database takes at least 30 seconds to stop gracefully (you configured this)
+* Database automatically restarts after being killed
+* Database stays stopped when you explicitly stop it
+* API gives up after 3 failed restart attempts
+* Both services recover when the database restarts
+
+**Think:** What's the difference between a crash and an explicit stop? Why would you want different behavior for each? What happens to in-flight requests when a container is killed vs stopped gracefully?
+
+### Task 4: Logging Configuration
+
+You want to run different services in different scenarios without maintaining separate compose files.
+
+**Your challenge:** Add a Redis cache service, but make it optional using profiles:
+* Default profile: runs database and API only
+* `cache` profile: also runs Redis
+* `full` profile: runs everything including a monitoring tool (use `prom/prometheus` image)
+
+Test each profile:
+```bash
+docker compose up                    # default
+docker compose --profile cache up   # with cache
+docker compose --profile full up    # everything
 ```
 
-Mount this into the postgres container so it runs automatically on first startup.
+**Success criteria:** You can start different combinations of services without editing the compose file.
 
-Verify: Start fresh (remove volumes), bring up the stack, then check if the table and data exist.
+**Think:** When would you use profiles vs separate compose files? What are real-world scenarios for this?
 
-Now modify `init.sql` to add another table and restart (without removing volumes). Does the new table appear?
+### Task 7: Extension Fields for DRY Configs
 
-**Think:** When do init scripts run? How would you handle schema migrations in production?
+You're repeating the same configuration across multiple services. Extension fields let you define common config once and reuse it.
 
-### Task 18: Graceful Shutdown
+**Your challenge:** Create extension fields for:
+* Common logging configuration
+* Common health check settings
+* Common resource limits
 
-Configure your services to shut down gracefully:
-* Set appropriate `stop_grace_period` for each service
-* Database needs time to flush data (30 seconds)
-* API needs time to finish requests (10 seconds)
-* Redis needs time to save data (10 seconds)
+Then reference these in your services using anchors and aliases.
 
-Test: Start your stack, create some data, then run `docker compose down`. Watch the logs - services should shut down cleanly without errors.
+**Success criteria:** Change the logging config in one place and it applies to all services.
 
-**Think:** What happens if a service doesn't stop within the grace period? How long is too long?
+**Think:** What's the tradeoff between DRY configs and readability? When does this become more confusing than helpful?
 
-### Task 19: Logging Configuration
+### Task 8: Volume Options and Drivers
 
-Configure logging for production:
-* Set log driver to `json-file`
-* Limit log size to 10MB per container
-* Keep only the last 3 log files
+Volumes have options beyond just mounting paths. Explore what's possible.
 
-This prevents logs from filling up disk space.
+**Your challenge:** Configure your database volume with specific options:
+* Set the volume to use the `local` driver explicitly
+* Add a label to the volume for documentation
+* Make the volume external (created outside compose)
 
-Verify: Check the logging configuration with `docker inspect <container-name>`.
+Create the external volume first:
+```bash
+docker volume create --label project=training postgres-data
+```
 
-**Think:** What happens when logs exceed the size limit? Where do logs go in production?
+Then reference it in your compose file.
 
-### Task 20: Health-Based Load Balancing
+**Success criteria:** `docker volume inspect postgres-data` shows your custom configuration. The volume persists even after `docker compose down -v`.
 
-Your nginx load balancer should only send traffic to healthy API instances.
-
-Add health checks to your load balancer configuration so it:
-* Checks each API instance's `/health` endpoint
-* Removes unhealthy instances from the pool
-* Adds them back when they become healthy
-
-Test: Kill one API instance and verify the load balancer stops sending traffic to it.
-
-**Think:** How does this improve reliability? What happens if all instances become unhealthy?
+**Think:** When would you use external volumes? What other volume drivers exist? What happens to external volumes when you run `docker compose down -v`?
 
 ## Resources
 
 * [Compose file reference](https://docs.docker.com/compose/compose-file/)
 * [Health checks](https://docs.docker.com/engine/reference/builder/#healthcheck)
+* [Depends on with conditions](https://docs.docker.com/compose/compose-file/05-services/#depends_on)
+* [Restart policies](https://docs.docker.com/compose/compose-file/05-services/#restart)
 * [Resource constraints](https://docs.docker.com/compose/compose-file/deploy/)
-* [Networking in Compose](https://docs.docker.com/compose/networking/)
-* [Volumes in Compose](https://docs.docker.com/compose/compose-file/07-volumes/)
 * [Logging configuration](https://docs.docker.com/config/containers/logging/configure/)
+* [Profiles](https://docs.docker.com/compose/profiles/)
+* [Extension fields](https://docs.docker.com/compose/compose-file/11-extension/)
+* [Volume configuration](https://docs.docker.com/compose/compose-file/07-volumes/)
 
 ## Verification Checklist
 
 You've completed this exercise when:
-* [ ] All services have working health checks
-* [ ] Services start in correct order based on health
+* [ ] Services have health checks and start in correct order
 * [ ] Restart policies configured and tested
-* [ ] Resource limits (CPU and memory) set and enforced
-* [ ] Resource reservations configured
-* [ ] Using named volumes, bind mounts, and tmpfs appropriately
-* [ ] Multi-network architecture with proper isolation
-* [ ] Load balancer distributing traffic across scaled services
-* [ ] Separate dev and prod configurations working
-* [ ] Database initialization scripts running on first startup
-* [ ] Graceful shutdown configured
+* [ ] Resource limits prevent services from consuming all system resources
 * [ ] Logging configured to prevent disk space issues
-* [ ] Health-based load balancing working
+* [ ] Profiles let you run different service combinations
+* [ ] Extension fields reduce configuration repetition
+* [ ] Volume options and external volumes working
+* [ ] Graceful shutdown configured
+* [ ] Can explain when to use each feature in production
 
 ## Cleanup
 
@@ -390,7 +217,7 @@ Stop and remove all resources:
 docker compose down -v
 ```
 
-Remove custom networks:
+Remove external volumes if created:
 ```bash
-docker network prune
+docker volume rm postgres-data
 ```
