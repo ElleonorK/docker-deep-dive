@@ -54,81 +54,150 @@ Try using the API's `/db-check` endpoint for its health check instead. What chan
 
 Containers don't always run forever. Sometimes they crash because they run out of resources, sometimes because of bugs, sometimes because of external factors.
 
-**Your challenge:** Configure aggressive resource limits that will cause problems:
-* Database: 128MB memory limit, 64MB reserved
-* API: 16B memory limit, 8MB reserved
+Let's see what happens when a container runs out of memory.
 
-Start your stack and watch what happens. Monitor with `docker stats` in another terminal.
+**Your challenge:** Open two terminals (or split your terminal). In the first terminal, run:
 
-Visit the API endpoints a few times. Create some database tables. What happens to the containers?
+```bash
+docker stats
+```
 
-Check the container status with `docker compose ps`. What do you see? Are they running, or something else?
+Leave this running so you can watch memory usage in real-time.
 
-Now look at the logs for whichever container crashed. What does the last message say?
+In the second terminal, start a memory-hungry container using the file in the exercise directory:
 
-**Success criteria:** You can make at least one container crash by hitting its resource limit. You understand what "OOMKilled" means.
+```bash
+docker compose -f memory-hog.yml up
+```
 
-**Think:** What happens to your application when a container suddenly dies? What about the data that was in memory? What if this was handling a user's payment?
+Watch both terminals. What do you see happening to the memory usage? What happens to the logs? How long does it take before something goes wrong?
+
+After it's done, run:
+
+```bash
+docker compose -f memory-hog.yml ps -a
+```
+
+What's the exit code? What does it mean?
+
+**Think:** 
+* What happens to your application when a container suddenly dies? What about the data that was in memory? What if this was handling a user's payment?
+* Compare the numbers you see in the logs vs what `docker stats` showed. Do they match? If not, why might that be?
 
 ### Task 3: Graceful Shutdown and Automatic Recovery
 
-In Task 2, you saw containers crash suddenly. That's not ideal. Let's learn how to handle shutdowns gracefully and recover automatically.
+What you just witnessed in Task 2 is called **OOMKilled** - the Linux kernel's Out-Of-Memory killer terminated your container when it exceeded its memory limit.
 
-First, remove those aggressive resource limits from Task 2. Set reasonable limits instead:
-* Database: 512MB memory limit, 256MB reserved
-* API: 256MB memory limit, 128MB reserved
+**Part A: Stopping the Bleeding**
 
-**Part A: Understanding Shutdown**
+**Your challenge:** Modify `memory-hog.yml` to prevent the OOMKilled crash in two different ways:
 
-Start your stack. Now run `docker compose down` and watch the logs carefully.
+1. The obvious way - adjust the resources
+2. The risky way - research if Docker has an option to tell the kernel to leave your container alone, no matter how much memory it consumes
 
-What do you see? Do the containers stop immediately or do they take time? Do you see any "killed" messages?
+Try both. What happens with each approach?
 
-Try stopping just the database:
+**Think:** Would that second option ever make sense in production? What's the worst that could happen?
+
+**Part B: How Containers Actually Die**
+
+OOMKilled is just one way containers stop. Let's explore others.
+
+Run a simple container that sleeps for 30 seconds:
+
 ```bash
-docker compose stop database
+docker run --name sleeper alpine sh -c "echo 'Running...'; sleep 30; echo 'Done'"
 ```
 
-How long does it take? Now check the API logs - what happened to it when the database disappeared?
+Let it finish. Check `docker ps -a` - what's the exit code?
 
-**Your challenge:** Research what signal Docker sends when stopping a container. Find out how much time containers get before they're force-killed. Can you give the database more time to shut down cleanly?
+Now run one that fails naturally:
 
-**Part B: Automatic Restart**
-
-Start your stack again. Now simulate a crash by killing the database:
 ```bash
-docker compose kill database
+docker run --name failer alpine cat /nonexistent-file
 ```
 
-What happens? Check `docker compose ps`. Is the database running?
+What's the exit code this time? Why is it different?
 
-**Your challenge:** Configure restart policies so containers recover automatically from crashes. Research what options exist and configure:
-* Database: Always restart when it crashes, but stay stopped if you explicitly stop it
-* API: Restart on failures, but give up after 3 attempts
+Start another sleeper, but this time press Ctrl+C to interrupt it:
 
-Test your configuration:
-* Kill the database with `docker compose kill database` - does it come back?
-* Stop the database with `docker compose stop database` - does it come back?
-* Kill the API repeatedly - does it eventually give up?
+```bash
+docker run --name interrupted alpine sleep 30
+# Press Ctrl+C (you might need to press it 2-3 times)
+```
 
-**Part C: The Cascade Effect**
+Check the exit code. What is it?
 
-With your restart policies configured, kill the database again. Watch what happens to the API.
+Now start a sleeper in detached mode and stop it with Docker:
 
-The API can't connect to the database anymore. What does it do? Does it crash? Does it keep trying?
+```bash
+docker run -d --name sleeper2 alpine sh -c "echo 'Running...'; sleep 30; echo 'Done'"
+docker stop sleeper2
+```
 
-Now wait for the database to restart. Does the API recover automatically, or is it stuck in a bad state?
+Watch how long it takes. Check `docker ps -a` for the exit code. Check the logs with `docker logs sleeper2` - did it finish or get interrupted?
 
-**Your challenge:** Make the API resilient to database restarts. It should automatically reconnect when the database comes back. You might need to modify the restart policy or add health checks.
+**Think:** Have you seen that exit code before? What's the connection between `docker stop` and what happened in Task 2?
 
-**Success criteria:**
-* Database takes at least 30 seconds to stop gracefully (you configured this)
-* Database automatically restarts after being killed
-* Database stays stopped when you explicitly stop it
-* API gives up after 3 failed restart attempts
-* Both services recover when the database restarts
+**Your challenge:** The stop took a specific amount of time before forcing the kill. Can you make it wait longer? Look for docker run options that control how containers are stopped.
 
-**Think:** What's the difference between a crash and an explicit stop? Why would you want different behavior for each? What happens to in-flight requests when a container is killed vs stopped gracefully?
+**Part C: Automatic Recovery**
+
+Back to the memory-hog. When it crashed in Task 2, it just died and stayed dead. In production, you'd want critical services to recover automatically from crashes.
+
+**Your challenge:** Modify `memory-hog.yml` so the container automatically restarts when it crashes.
+
+Start it and watch. What happens after it crashes? Does it come back? How many times? Check `docker compose ps` while it's running - what information do you see about restarts?
+
+Let it crash a few times, then stop it yourself with `docker compose stop memory-hog`. Wait a moment. Did it restart? Why or why not?
+
+Now imagine this scenario: your container has a bug that makes it crash immediately on startup. You don't want it restarting forever and consuming resources. 
+
+**Your challenge:** Configure it to give up after 3 failed attempts instead of restarting indefinitely.
+
+Test it - does it stop trying after 3 crashes?
+
+**Think:** What's worse in production - a service that crashes and stays down, or one that keeps crashing and restarting forever?
+
+**Part D: Graceful Shutdown**
+
+If you haven't already, remove the resource constraints from `memory-hog.yml` so it doesn't crash.
+
+**Time To Stop**
+
+Start the memory-hog stack.
+
+Stop the container and time how long it takes:
+
+```bash
+time docker compose -f memory-hog.yml stop memory-hog
+```
+
+**Think:** If this were a critical container, would this time be enough? What repercussions can there be if it's not?
+
+**Your challenge:** Change the memory-hog.yml to wait for 10 more seconds before stopping the container.
+
+**Success Criteria:** You see a real time longer than 10 seconds when running:
+
+```bash
+time docker compose -f memory-hog.yml stop memory-hog
+```
+
+**Kill Bill 2**
+
+Start the container again.
+
+Now KILL the undead:
+
+```bash
+time docker compose -f memory-hog.yml kill memory-hog
+```
+
+How long did it take to kill? Hope you learned the difference between mercy and show of force.
+
+**Bonus:** Create the stack again, and kill it using classic `docker stop`.
+ 
+
 
 ### Task 4: Logging Configuration
 

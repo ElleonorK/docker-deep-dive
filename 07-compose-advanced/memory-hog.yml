@@ -1,0 +1,22 @@
+services:
+  memory-hog:
+    image: python:3.11-alpine
+    command:
+      - sh
+      - -c
+      - |
+        python -u <<'END'
+        import time
+        data = []
+        print('🧠 Starting memory allocation...')
+        for i in range(1, 100):
+            data.append(' ' * 5 * 1024 * 1024)
+            print(f'🧠 Allocated {i*5}MB...')
+            time.sleep(2)
+        END
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+        reservations:
+          memory: 16M
