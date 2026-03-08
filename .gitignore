@@ -160,3 +160,7 @@ profile.cov
 *.md
 !README.md
 !SETUP.md
+
+# temporary files and directories
+tmp*
+temp*

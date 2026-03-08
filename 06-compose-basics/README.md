@@ -161,9 +161,25 @@ Are you running into any issues?
 
 What are the containers named? Notice the pattern?
 
-Now that you `api` is stable and all requests are being fulfilled, the database starts to choke. In a real scenario, you will start seeing 502 errors.
+Now delete one of the api containers:
+```bash
+docker rm -f <one-api-container-name>
+```
 
-So now you should increase the number of database containers to 3.
+Check `docker compose ps`. What do you see? Now run:
+```bash
+docker compose up -d
+```
+
+Did Compose recreate the deleted container? Check `docker compose ps` again.
+
+**Think:** What's the source of truth for the number of containers for each service? Bonus, you can research how Kubernetes remembers scale in production.
+
+**Your challenge:** Make it so that `docker compose up` always starts 2 api containers, even after `docker compose down` and `docker compose up`.
+
+Now that your api is stable and all requests are being fulfilled, the database starts to choke. In a real scenario, you will start seeing 502 errors.
+
+So now you should increase the number of database containers to 3 (persistently).
 > [!Tip]
 > Quite a few databases (and not just) require an uneven number of instances due to "leader election" logic.
 > 
@@ -180,9 +196,7 @@ Now list all your database containers and pick one. Delete it:
 docker rm -f <one-database-container-name>
 ```
 
-What happens? Check `docker compose ps`. What do you see?
-
-Wait a moment and check again. Did Compose recreate the container? What's its name?
+Re-run `docker compose up -d` (❗without bringing it down).
 
 Query your test data from the recreated container. Is it still there?
 
@@ -194,7 +208,7 @@ docker compose exec <one-database-container-name> ls /tmp/
 
 Delete that specific container and let Compose recreate it. Check if the file is still there in the new container.
 
-**Think:** Does a container name match with it's data? What happens inside docker daemon when a container in a set vanishes?
+**Think:** Does a container name match with its data? What happens inside docker daemon when a container in a set vanishes?
 
 ### Task 6: Configuration
 
