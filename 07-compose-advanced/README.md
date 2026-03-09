@@ -197,9 +197,147 @@ How long did it take to kill? Hope you learned the difference between mercy and 
 
 **Bonus:** Create the stack again, and kill it using classic `docker stop`.
  
+**The Language of Signals**
 
+When you ran `docker stop`, Docker sent a signal to the process inside the container. By default, it sends SIGTERM - a polite request to shut down. If the process doesn't respond within the grace period, Docker sends SIGKILL - which can't be ignored.
 
-### Task 4: Logging Configuration
+But not all applications speak the same language. Some expect different signals.
+
+**Your challenge:** Look up what signal Docker Compose uses by default when stopping containers. Can you change it? Try configuring `memory-hog.yml` to send SIGINT (the same signal Ctrl+C sends) instead.
+
+Test it:
+```bash
+docker compose -f memory-hog.yml up -d
+docker compose -f memory-hog.yml stop memory-hog
+```
+
+Check the logs. Did anything change? Python's default behavior handles both signals similarly, but does your configuration work?
+
+**Think:** When would you need to change the stop signal? What if your application only handles SIGINT? What about SIGHUP?
+
+**Last Words**
+
+Sometimes you need to run cleanup commands when your container receives the stop signal, before it fully dies.
+
+**Think:** What could go wrong if your container dies without a chance to clean up properly? What state might be left behind?
+
+**Your challenge:** Modify `memory-hog.yml` so that when the stop signal is received, it echoes "Goodbye, cruel world!" 
+
+Start the container, then stop it:
+```bash
+docker compose -f memory-hog.yml up -d
+docker compose -f memory-hog.yml stop memory-hog
+```
+
+**Success criteria:** You can see "Goodbye, cruel world!" in the container logs when it shuts down.
+
+**Think:** When would you use this in production? What's the difference between handling shutdown in your application code vs running a separate command during shutdown?
+
+### Task 4: Who Runs This Thing Anyway?
+
+Your security team mandates all containers run as non-root. Configure memory-hog to run as UID 5000.
+
+Add a volume mount `./hog-data:/data` and have the container create some files:
+
+```bash
+docker compose -f memory-hog.yml exec memory-hog sh -c 'echo "data" > /data/output.txt'
+docker compose -f memory-hog.yml exec memory-hog sh -c 'echo "more" > /data/results.txt'
+```
+
+Now try to delete those files from your host:
+
+```bash
+rm hog-data/output.txt
+```
+
+What happens? Why?
+
+**Your challenge:** Fix it so you can manage these files from your host, while still using a non-root user.
+
+**Think:** Why shouldn't you do this in production? You run with user 5000, but what would happen if you run with 1000?
+
+Now let's explore granular file permissions. Create three config files:
+
+```bash
+mkdir -p hog-config
+echo "SHARED=true" > hog-config/shared.conf
+echo "HOST=true" > hog-config/host-only.conf
+echo "CONTAINER=true" > hog-config/container-only.conf
+```
+
+**Your challenge:** Mount these three files individually in `memory-hog.yml` with different permissions so that:
+* `shared.conf` - both host and container (UID 5000) can modify
+* `host-only.conf` - only host can modify, container can only read
+* `container-only.conf` - only container can modify, host can only read
+
+Test by trying to modify each file from both the host and container.
+
+**Bonus:** Learn how to translate numeric permission codes into letter format (like `rwxr-xr--`).
+
+Now try accessing the files as root from inside the container:
+
+```bash
+docker compose -f memory-hog.yml exec --user root memory-hog sh -c 'echo "I AM GROOT" >> /config/host-only.conf'
+```
+
+Did it work? Why or why not?
+
+**Think:** Where did you learn how to prevent containers from running as root in the first place? (Hint: it wasn't in the compose file)
+
+Your container's filesystem is fully writable. Try creating files in different locations:
+
+```bash
+docker compose -f memory-hog.yml exec memory-hog touch /tmp/test1
+docker compose -f memory-hog.yml exec memory-hog touch /usr/local/test2
+docker compose -f memory-hog.yml exec memory-hog touch /test3
+```
+
+All of these work. If an attacker compromises your container, they could modify files, create backdoors, or install malicious tools.
+
+**Your challenge:** Lock down the filesystem so nothing can be written anywhere. The memory-hog script should still run successfully.
+
+After making the change, test by trying to create files in those same locations. What happens? Does the script still run?
+
+Run this command that modifies memory-hog to write into a file instead:
+
+```bash
+sed -i "s/print(f'🧠 Allocated {i\*5}MB...')/open('\/tmp\/memory.log', 'a').write(f'Allocated {i*5}MB\\\\n')/" memory-hog.yml
+```
+
+Does the container start now? Why?
+
+**Your challenge:** While keeping the filesystem locked, find a way to give the container user write permissions specifically to the `/tmp` directory.
+
+**Success criteria:** Container runs and writes logs to `/tmp/`, but you cannot create files anywhere else.
+
+**Think:** An attacker compromises your container. With all these layers - non-root user, file permissions, locked filesystem - what can they still do? What can't they do anymore?
+
+You've built multiple security layers. But there's one configuration that bypasses everything.
+
+First, check what devices your container can see:
+
+```bash
+docker compose -f memory-hog.yml exec memory-hog ls /dev
+```
+
+Note how limited it is. Now add `privileged: true` to your memory-hog service and restart it. Run the same command:
+
+```bash
+docker compose -f memory-hog.yml exec memory-hog ls /dev
+```
+
+Where did all these additional devices come from? Figure it out.
+
+**Success criteria:** You should start feeling very uneasy, maybe even scared 😰
+
+**Think:** When would you legitimately need privileged mode? What's the risk if you use it unnecessarily?
+
+> [!CAUTION]
+> Never use privileged mode unless you are 100% sure what you are doing.
+
+Remove `privileged: true` from your configuration.
+
+### Task 5: Logging Configuration
 
 You want to run different services in different scenarios without maintaining separate compose files.
 
