@@ -5,14 +5,12 @@ Master production-ready Docker Compose configurations with health checks, resour
 ## Objectives
 
 By the end of this exercise, you'll be comfortable with:
-* Implementing health checks and smart startup dependencies
-* Configuring restart policies for resilience
-* Managing resource limits and reservations
-* Controlling logging to prevent disk space issues
-* Using profiles for optional services
-* Implementing graceful shutdown
-* Using extension fields to keep configs DRY
-* Understanding volume options and drivers
+* Coordinating service startup and ensuring readiness
+* Making services resilient to failures and resource constraints
+* Implementing graceful shutdown and cleanup
+* Securing containers with user isolation and filesystem restrictions
+* Managing configuration and sensitive data declaratively
+* Running different service combinations for different environments
 
 ## Prerequisites
 
@@ -337,60 +335,79 @@ Where did all these additional devices come from? Figure it out.
 
 Remove `privileged: true` from your configuration.
 
-### Task 5: Logging Configuration
+### Task 5: The Final Boss Level
 
-You want to run different services in different scenarios without maintaining separate compose files.
+You've been through crashes, lock downs, zombie resurrections and intruders at your gates. You've learned a lot, but this doesn't cover everything Docker Compose can do - NOT EVEN CLOSE!
 
-**Your challenge:** Add a Redis cache service, but make it optional using profiles:
-* Default profile: runs database and API only
-* `cache` profile: also runs Redis
-* `full` profile: runs everything including a monitoring tool (use `prom/prometheus` image)
+Best of all, new features keep getting added, and there's always more to explore.
 
-Test each profile:
+**Your Final Quest ⚔️**
+
+Time to bring what you've learned here to your full stack and add a few more production patterns.
+
+**Part A: Practice Makes Perfect**
+
+Switch back to your main stack from exercise 06 (api, database, simple-go-web).
+
+**Your challenge:** Add to your main stack:
+* Health checks for all services
+* Restart policies
+* Resource limits
+* Non-root users where appropriate
+* Volume permissions
+* Read-only filesystems where possible
+
+Start your stack and verify everything works. Check that services start in the correct order and restart automatically if they crash.
+
+**Think:** Which services can run with read-only filesystems? Which need writable space?
+
+**Part B: Better Composition**
+
+Your simple-go-web app displays a message from `message.txt`. Currently, this file is copied into the image during build. Want to change the message? Rebuild the entire image. That's annoying.
+
+**Your challenge:** Use Docker Compose configs to manage `message.txt` declaratively. Define it in your compose file and mount it into the container.
+
+After making the change, modify the message and restart the service. The new message should appear without rebuilding.
+
+**Success criteria:** You can change the message by editing your compose file and restarting, no rebuild needed.
+
+**Think:** What's the advantage over copying files during build? When would you still want to copy files into the image?
+
+**Part C: Stop Being So Obvious**
+
+Your database password is just sitting there, in plain text for all to see. Your security team is not amused.
+
+**Your challenge:** Move the database password to a Docker secret. Both the database and API need to read it.
+
+**Success criteria:** The password doesn't appear in plain text in your compose file. The API connects to the database successfully.
+
+>[!Note]
+> You might need to modify the code a bit.
+
+**Think:** What if someone gets shell access to your container? Can they still read the secret? How is this better than environment variables?
+
+**Part D: To Each Their Own**
+
+You have different teams working on different services and combinations.
+Frontend developers work on simple-go-web and api. Backend developers only run the database. QA need to test connection between api and database. And sometimes you only need one.
+
+**Your challenge:** Use profiles to make services optional:
+* Default: all services run
+* `frontend`: simple-go-web + api only
+* `backend`: database only
+* `goapp`: simple-go-web only
+* `nodeapp`: api + database only
+
+Test different combinations:
 ```bash
-docker compose up                    # default
-docker compose --profile cache up   # with cache
-docker compose --profile full up    # everything
+docker compose up                        # everything
+docker compose --profile frontend up    # frontend stack
+docker compose --profile goapp up       # just Go app
 ```
 
-**Success criteria:** You can start different combinations of services without editing the compose file.
+**Success criteria:** You can start different service combinations without editing the compose file.
 
-**Think:** When would you use profiles vs separate compose files? What are real-world scenarios for this?
-
-### Task 7: Extension Fields for DRY Configs
-
-You're repeating the same configuration across multiple services. Extension fields let you define common config once and reuse it.
-
-**Your challenge:** Create extension fields for:
-* Common logging configuration
-* Common health check settings
-* Common resource limits
-
-Then reference these in your services using anchors and aliases.
-
-**Success criteria:** Change the logging config in one place and it applies to all services.
-
-**Think:** What's the tradeoff between DRY configs and readability? When does this become more confusing than helpful?
-
-### Task 8: Volume Options and Drivers
-
-Volumes have options beyond just mounting paths. Explore what's possible.
-
-**Your challenge:** Configure your database volume with specific options:
-* Set the volume to use the `local` driver explicitly
-* Add a label to the volume for documentation
-* Make the volume external (created outside compose)
-
-Create the external volume first:
-```bash
-docker volume create --label project=training postgres-data
-```
-
-Then reference it in your compose file.
-
-**Success criteria:** `docker volume inspect postgres-data` shows your custom configuration. The volume persists even after `docker compose down -v`.
-
-**Think:** When would you use external volumes? What other volume drivers exist? What happens to external volumes when you run `docker compose down -v`?
+**Think:** When would you use profiles vs separate compose files? What happens when you need a service in multiple profiles?
 
 ## Resources
 
@@ -421,10 +438,15 @@ You've completed this exercise when:
 
 Stop and remove all resources:
 ```bash
+cd ../06-compose-basics
 docker compose down -v
+cd ../07-compose-advanced
+docker compose -f memory-hog.yml down -v
 ```
 
-Remove external volumes if created:
+Clean up any test directories created:
 ```bash
-docker volume rm postgres-data
+rm -rf hog-data hog-config
+cd ../06-compose-basics
+rm -rf api-logs api-config
 ```
